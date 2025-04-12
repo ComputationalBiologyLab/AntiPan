@@ -1,0 +1,868 @@
+#!/bin/bash 
+source_path=$(pwd)
+cd ..
+AntiPan_dir=$(pwd)
+cd Source_Code
+Annotation_module() {
+echo ">> Please note that the bacterial genomes should be in fasta format"
+echo "Please, specify the path to the directory of the input bacterial genomes"
+read input_data
+echo "Please, specify the directory where you want to save the annotation results"
+read output_data
+cp "GB_DB/Staphylococcus aureus MRSA-118.gb" $input_data
+mkdir -p "$output_data/Antipan_Results/Annotation_Results"
+echo "Please write the path to the conda.sh file"
+read path_to_conda
+export conda_sh="$path_to_conda"
+source "$conda_sh"
+conda activate prokka # to be changed to "conda activate Antipan"
+for file in $(ls $input_data)
+do 
+	name=$(basename "$file" .fasta)
+	prokka --cpus 20 --prefix $name --Kingdom Bacteria --genus Staphylococcus --species aureus --proteins 'Staphylococcus aureus MRSA-118.gb' --locustag $name --centre x --compliant $input_data/$name.fasta --outdir "$output_data/Antipan_Results/Annotation_Results/$name"
+	let c++
+	echo $c
+done
+rm -R "$input_data/Staphylococcus aureus MRSA-118.gb"	
+## collecting gff files into one directory for pangenome estimation module ##
+mkdir -p "$output_data/Antipan_Results/GFF_Files"
+# Iterate over directories in $output_data
+for folder in "$output_data/Antipan_Results/Annotation_Results"/*/; do
+    # Check if it's a directory
+    if [ -d "$folder" ]; then
+        # Change to the directory
+        cd "$folder" || { echo "Failed to cd into $folder"; continue; }
+
+        # Find and copy each .gff file to the GFF_Files directory
+        find . -name "*.gff" -exec cp {} "$output_data/Antipan_Results/GFF_Files" \;
+
+        # Return to the original directory
+        cd - > /dev/null
+    fi
+done
+export annot_output_dir="$output_data/Antipan_Results/GFF_Files"
+export Antipan_dir="$output_data/Antipan_Results"
+echo "------Genome_Annotation_DONE------$1"
+}
+
+Pangenome_module() {
+# "-f" STR    output directory
+# "-p" INT    number of threads
+# "-s" 	      dont split paralogs
+# "-r"	      create R plots, requires R and ggplot2
+# "-e" 	      create a multiFASTA alignment of core genes using PRANK
+# "-v"	      verbose output to STDOUT ###
+# "-cd"       FLOAT percentage of isolates a gene must be in to be core
+# "-z"	      dont delete intermediate files
+
+if [ -f "$conda_sh" ] ; then
+            source $path_to_conda
+            conda activate Antipan
+        else
+            echo "Please write the path to the conda.sh file"
+            read path_to_conda 
+            source $path_to_conda
+            conda activate Antipan
+fi
+
+if [ -z $annot_output_dir ] ; then
+            echo "Please, specify the path to the input GFF files directory"
+	  read input_gff_dir
+        elif [ ! -z $annot_output_dir ] ; then
+            input_gff_dir="$annot_output_dir"
+fi
+cd $input_gff_dir
+if [ -z $output_data ] ; then
+            echo "Please, provide directory where you want to save the pangenome results"
+	  read pangenome_dir
+	  mkdir -p "$pangenome_dir/Antipan_Results"
+	  outputFolder="$pangenome_dir/Antipan_Results/Pangenome_Results"
+        else
+            outputFolder="$output_data/Antipan_Results/Pangenome_Results"
+fi
+
+if [ -e $outputFolder ]; then
+    echo $outputFolder "already exists!!"
+    while true; do
+        echo "Do you want to overwrite it? (Y/N)"
+        read answer
+        if [ "$answer" = "Y" ] || [ "$answer" = "y" ]; then
+            rm -R $outputFolder
+            break
+        elif [ "$answer" = "N" ] || [ "$answer" = "n" ]; then
+            echo "Operation cancelled."
+            break
+        else
+            echo "Invalid input. Please enter Y or N."
+        fi
+    done;
+fi
+roary -f $outputFolder -p 20 -s -r -e -v -cd 98 -z --mafft *.gff
+echo "__>> Pangenome_Results folder created <<__"
+echo "_____\ Roary completed /_____";
+cd $outputFolder;
+echo "current Working directory is: ";
+pwd
+## Phylogenetic Tree Construction "Pangenome Matrix" ##
+FastTree -nt -gtr core_gene_alignment.aln > Phylogenetic-Tree.newick
+python3 $source_path/roary_plots.py --format tiff Phylogenetic-Tree.newick gene_presence_absence.csv
+
+##### post pangenome processing #####
+query_pan_genome -a union -o pan_genome_results $input_gff_dir/*.gff;
+echo "Pan File generated"
+# generating a file "PanIDList.txt" containing the gene IDs only
+while read line; do echo "${line%%:*}" >> PanIDList.txt; done < pan_genome_results;
+echo "PanList Created"
+# awk for pattern scanning and searching within a file (selecting specific sequences from genome_reference file based on IDList in the first file)
+awk 'NR==FNR{a[$0];next}/^>/{f=0;n=split($0,b," ");} (b[2] in a)||f{print;f=1}' PanIDList.txt pan_genome_reference.fa > pan.fasta;
+# this command "sed" modifies the lines in the file "pan.fasta" based on the pattern "s/ /_/g" to add "_" instead of a spcae [polish_00001 group_522 --> polish_00001_group_522]
+sed -e "s/ /_/g" < pan.fasta >> Pangenome_Nuc.fasta;
+rm -f pan.fasta 
+echo "Pangenome.Fasta generated"
+#mv $outputFolder/pan.fasta $outputFolder/Sequences
+
+query_pan_genome -a intersection -c 95 -o core_genome_results_95 $input_gff_dir/*.gff;
+echo "Core File generated"
+while read line; do echo "${line%%:*}" >> CoreIDList_95.txt; done < core_genome_results_95;
+echo "Core List Created"
+awk 'NR==FNR{a[$0];next}/^>/{f=0;n=split($0,b," ");} (b[2] in a)||f{print;f=1}' CoreIDList_95.txt pan_genome_reference.fa  > core.fasta;
+sed -e "s/ /_/g" < core.fasta >> Coregene_Nuc_95.fasta;
+rm -f core.fasta 
+echo "Core.Fasta generated"
+#mv $outputFolder/core.fasta $outputFolder/Sequences
+
+query_pan_genome -a complement -o accessory_genome_results $input_gff_dir/*.gff;
+# counting the number of words in each line of the file "accessory_genome_results", and if the line contains 2 words (count = 2) then print this line into the new file "uniqueIDList.txt", if not print the line into the file "AccessoryIDList.txt"
+IFS=''
+while read line;do declare -i count=$(echo "$line" | wc -w); if (( $count == 2 ))
+then
+echo "count is: $count"
+echo "${line%%:*}" >> uniqueIDList.txt
+echo "unique List Created"
+else
+echo "${line%%:*}" >> AccessoryIDList.txt
+echo "Accessory List Created"
+fi
+done < accessory_genome_results
+echo "Accessory List Created"
+awk 'NR==FNR{a[$0];next}/^>/{f=0;n=split($0,b," ");} (b[2] in a)||f{print;f=1}' AccessoryIDList.txt pan_genome_reference.fa > acces.fasta;
+sed -e "s/ /_/g" < acces.fasta >> Accessory_Nuc.fasta;
+rm -f acces.fasta 
+echo "Accessory.Fasta generated"
+
+awk 'NR==FNR{a[$0];next}/^>/{f=0;n=split($0,b," ");} (b[2] in a)||f{print;f=1}' uniqueIDList.txt pan_genome_reference.fa > uniq.fasta;
+sed -e "s/ /_/g" < uniq.fasta >> Unique_Nuc.fasta;
+rm -f uniq.fasta
+echo "Unique.Fasta generated"
+## Translate Core genes into proteins ##
+perl "$source_path/Translator.pl" Coregene_Nuc_95.fasta Coregene_Proteins_95.fasta
+echo "Coregene_proteins_95.fasta generated"
+perl "$source_path/Translator.pl" Accessory_Nuc.fasta Accessory_Proteins.fasta
+echo "Accessory_Proteins.fasta generated"
+perl "$source_path/Translator.pl" Unique_Nuc.fasta Unique_Proteins.fasta
+echo "Unique_Proteins.fasta generated"
+export Pangenome_Results="$outputFolder"
+echo "------Pangenome_Analysis_DONE------$2"
+}
+
+Reverse_Vaccinology_module() {
+# Loclaization of proteins using psortb
+if [ -f "$conda_sh" ] ; then
+            source $path_to_conda
+            conda activate Antipan
+        else
+            echo "Please write the path to the conda.sh file"
+            read path_to_conda 
+            source $path_to_conda
+            conda activate Antipan
+fi
+if [ -z $Pangenome_Results ] ; then
+            echo "Please, provide the path to the input protein(s) fasta file"
+	  read input_fasta_file
+	  echo "Please, provide directory where you want to save the Reverse Vaccinology results"
+	  read RV_output_dir
+	  mkdir -p "$RV_output_dir/Antipan_Results/RV_Results/Psortb_Results"
+        elif [ ! -z $Pangenome_Results ] ; then
+            input_fasta_file="$Pangenome_Results/Coregene_Proteins_95.fasta"
+            RV_output_dir="$output_data"
+            mkdir -p "$RV_output_dir/Antipan_Results/RV_Results/Psortb_Results"
+fi
+
+perl $source_path/psortb -p -i "$input_fasta_file" -r "$RV_output_dir/Antipan_Results/RV_Results/Psortb_Results" -o terse
+cd "$RV_output_dir/Antipan_Results/RV_Results/Psortb_Results"
+file=$(ls *.txt);
+awk '$1 == "SeqID" {print $0}; $2~/^(CytoplasmicMembrane|Extracellular|Cellwall|Unknown)$/ {print $0}' $file > psortb_filtered.txt;
+awk -F' ' 'NR==FNR{a[$1]; next} /^>/{if (substr($0,2) in a && !(seen[substr($0,2)]++)) seq=1; else seq=0} seq{print}' psortb_filtered.txt $input_fasta_file > LC_Filter.fasta;
+cd ..
+cd ..  
+echo "Localization Filter Finished"
+# Virulence factors filter
+mkdir -v "RV_Results/VF_Results"
+blastp -query RV_Results/Psortb_Results/LC_Filter.fasta -db $AntiPan_dir/DB/MVIRDB/MVIRDB -outfmt 10 -out $RV_output_dir/Antipan_Results/RV_Results/VF_Results/Virulence_proteins_hits.out -evalue 1.0E-5
+blastp -query RV_Results/Psortb_Results/LC_Filter.fasta -db $AntiPan_dir/DB/MVIRDB/MVIRDB -outfmt 7 -out $RV_output_dir/Antipan_Results/RV_Results/VF_Results/Virulence_proteins_details.out -evalue 1.0E-5
+awk -F ',' '$3 >= 35 && $12 >= 100 {print}' RV_Results/VF_Results/Virulence_proteins_hits.out > RV_Results/VF_Results/Bit_Identity_Filtered.txt
+awk -F',' 'END{if (system("test -s RV_Results/VF_Results/Bit_Identity_Filtered.txt") != 0) system("cat RV_Results/Psortb_Results/LC_Filter.fasta > RV_Results/VF_Results/VF_Filter.fasta")} NR==FNR{a[$1]; next} /^>/{if (substr($0,2) in a && !(seen[substr($0,2)]++)) seq=1; else seq=0} seq{print}' RV_Results/VF_Results/Bit_Identity_Filtered.txt $input_fasta_file > RV_Results/VF_Results/VF_Filter.fasta
+echo "Virulence Filter Finished"
+# Homology with human proteins using HSDB
+mkdir -v "RV_Results/HS_Homology_Results"
+blastp -query RV_Results/VF_Results/VF_Filter.fasta -db $AntiPan_dir/DB/HSDB/HSDB -outfmt 10 -out $RV_output_dir/Antipan_Results/RV_Results/HS_Homology_Results/Human_Homology_hits.out -evalue 1.0E-5
+blastp -query RV_Results/VF_Results/VF_Filter.fasta -db $AntiPan_dir/DB/HSDB/HSDB -outfmt 7 -out $RV_output_dir/Antipan_Results/RV_Results/HS_Homology_Results/Human_Homology_detailed.out -evalue 1.0E-5
+awk -F ',' '$3 >= 35 && $12 >= 100 {print}' RV_Results/HS_Homology_Results/Human_Homology_hits.out > RV_Results/HS_Homology_Results/Bit_Identity_Filtered.txt
+awk -F ',' '!seen[$1]++ {print $1}' RV_Results/HS_Homology_Results/Bit_Identity_Filtered.txt > RV_Results/HS_Homology_Results/Non_redundant_Results.txt
+awk 'END{if (system("test -s RV_Results/HS_Homology_Results/Non_redundant_Results.txt") != 0) system("cat RV_Results/VF_Results/VF_Filter.fasta > RV_Results/HS_Homology_Results/HS_Filter.fasta")} NR==FNR{a[$0]; next} /^>/ {protein_name=$0; sub(/^>/, "", protein_name); if (!(protein_name in a)) {print; getline; print}}' RV_Results/HS_Homology_Results/Non_redundant_Results.txt RV_Results/VF_Results/VF_Filter.fasta > RV_Results/HS_Homology_Results/HS_Filter.fasta
+echo "Human_Homolgy Filter Finished"
+# Homology with Gut Flora using GFDB
+mkdir -v "RV_Results/GF_Homology_Results"
+blastp -query RV_Results/HS_Homology_Results/HS_Filter.fasta -db $AntiPan_dir/DB/GFDB/GutFlora -outfmt 10 -out $RV_output_dir/Antipan_Results/RV_Results/GF_Homology_Results/GutFlora_Homology_hits.out -evalue 1.0E-12; 
+blastp -query RV_Results/HS_Homology_Results/HS_Filter.fasta -db $AntiPan_dir/DB/GFDB/GutFlora -outfmt 7 -out $RV_output_dir/Antipan_Results/RV_Results/GF_Homology_Results/GutFlora_Homology_details.out -evalue 1.0E-12;
+awk -F ',' '$3 >= 70 && $12 >= 100 {print}' RV_Results/GF_Homology_Results/GutFlora_Homology_hits.out > RV_Results/GF_Homology_Results/Bit_Identity_Filtered.txt;
+awk -F ',' '!seen[$1]++ {print $1}' RV_Results/GF_Homology_Results/Bit_Identity_Filtered.txt > RV_Results/GF_Homology_Results/Non_redundant_Results.txt;
+awk 'END{if (system("test -s RV_Results/GF_Homology_Results/Non_redundant_Results.txt") != 0) system("cat RV_Results/HS_Homology_Results/HS_Filter.fasta > RV_Results/GF_Homology_Results/GF_Filter.fasta")} NR==FNR{a[$0]; next} /^>/ {protein_name=$0; sub(/^>/, "", protein_name); if (!(protein_name in a)) {print; getline; print}}' RV_Results/GF_Homology_Results/Non_redundant_Results.txt RV_Results/HS_Homology_Results/HS_Filter.fasta > RV_Results/GF_Homology_Results/GF_Filter.fasta	
+echo "GutFlora_Homolgy Filter Finished"
+# Transmembrane Helices filter using DeepTMHMM 
+mkdir -v "RV_Results/TM_Helices_Results"
+cd "RV_Results/TM_Helices_Results"
+max_retries=3 
+retry_count=0
+success=false
+
+while [ $retry_count -lt $max_retries ] && [ "$success" = false ]; do
+    if  biolib run DTU/DeepTMHMM --fasta ../GF_Homology_Results/GF_Filter.fasta; then                
+        success=true
+    else                 
+        ((retry_count++))
+        echo "Attempt $retry_count failed. Retrying..."
+        sleep 10  # wait before retrying
+    fi
+done
+                               
+if [ "$success" = false ]; then
+    echo "Failed after $max_retries attempts"
+    exit 1
+fi
+cd ..
+cd ..
+awk '/Number of predicted TMRs:/ { if ($NF == 0 || $NF == 1) print prev } { prev = $2 }' RV_Results/TM_Helices_Results/biolib_results/TMRs.gff3 > RV_Results/TM_Helices_Results/TM_Helices_Predictions.txt
+awk 'NR==FNR{a[$1]; next} /^>/{id=substr($0,2); if (id in a) seq=1; else seq=0} seq{print}' RV_Results/TM_Helices_Results/TM_Helices_Predictions.txt RV_Results/GF_Homology_Results/GF_Filter.fasta > RV_Results/TM_Helices_Results/TM_Helices_Filter.fasta
+echo "Transmembrane Helices Filter Finished" 
+# Molecular Weight filter
+mkdir -v "RV_Results/MW_Results"
+perl $source_path/MW.pl RV_Results/TM_Helices_Results/TM_Helices_Filter.fasta RV_Results/MW_Results/Proteins_MW.txt
+tac RV_Results/MW_Results/Proteins_MW.txt | awk '$1=="Molecular" && $6 < 110000 {getline; print; getline; print}' | tac  > RV_Results/MW_Results/MW_Filter.fasta
+echo "Molecular Weight Filter Finished"
+
+# Antigenicity filter
+mkdir -v "RV_Results/Antigenicity_Results"
+echo "Please perform the following steps manually:"
+echo "1. Open the VaxiJen tool in your browser: https://www.ddg-pharmfac.net/vaxijen/VaxiJen/VaxiJen.html"
+echo "2. Upload the file 'RV_Results/MW_Results/MW_Filter.fasta' as the input."
+echo "3. Select 'Bacteria' as the target organism, and 0.5 as the threshold"
+echo "4. Check 'Summary Mode' and click 'Submit'."
+echo "5. Once the job is complete, copy the results and save them to a file named 'Vaxijen_Summary_Output.txt' in the 'RV_Results/Antigenicity_Results' directory."
+echo "6. Press Enter to continue after completing the above steps."
+read -p "Press Enter to continue..."
+awk '{for (i=1; i<NF; i++) if ($i == "=") {val=$(i+1)+0; if (val >= 0.5) print $1}}' RV_Results/Antigenicity_Results/Vaxijen_Summary_Output.txt > RV_Results/Antigenicity_Results/Antigenic_Proteins.txt
+awk 'NR==FNR {a[substr($1,2)]; next} /^>/ {id=substr($0,2); seq=(id in a)} seq' RV_Results/Antigenicity_Results/Antigenic_Proteins.txt RV_Results/MW_Results/MW_Filter.fasta > RV_Results/Antigenicity_Results/Antigenic_Proteins.fasta
+echo "Antigenicity Filter Finished"
+# Allergenicity filter
+mkdir -v "RV_Results/Allergenicity_Results"
+echo "Please perform the following steps manually:"
+echo "1. Open the AllerTOP v2.1 tool in your browser: https://www.ddg-pharmfac.net/allertop_test/"
+echo "2. Register with your Email address and then log in."
+echo "3. Upload the file 'RV_Results/Antigenicity_Results/Antigenic_Proteins.fasta' as the input."
+echo "4. Click 'Submit'."
+echo "5. Once the job is complete, copy the results and save them to a file named 'Allergenicity_Output.txt' in the 'RV_Results/Allergenicity_Results' directory."
+echo "6. Press Enter to continue after completing the above steps."
+read -p "Press Enter to continue..."
+awk '/Results for protein/ {id=$5} /Classification based on the most similar protein: Probable NON-ALLERGEN/ {sub(/:$/, "", id); print id}' RV_Results/Allergenicity_Results/Allergenicity_Output.txt > RV_Results/Allergenicity_Results/Non_Allergenic_Proteins.txt
+awk 'NR==FNR {a[$1]; next} /^>/ {id=substr($0,2); seq=(id in a)} seq' RV_Results/Allergenicity_Results/Non_Allergenic_Proteins.txt RV_Results/Antigenicity_Results/Antigenic_Proteins.fasta > RV_Results/Allergenicity_Results/Non_Allergens.fasta
+echo "Allergenicity Filter Finished"
+export RV_Results_dir="$RV_output_dir/Antipan_Results/RV_Results/Allergenicity_Results"
+echo "------Reverse_Vaccinology_DONE------$3"
+}
+
+Protein_Assessment_module() {
+# Essentiality Filter using DEG
+if [ -f "$conda_sh" ] ; then
+            source $path_to_conda
+            conda activate Antipan
+        else
+            echo "Please write the path to the conda.sh file"
+            read path_to_conda 
+            source $path_to_conda
+            conda activate Antipan
+fi
+if [ -z $RV_Results_dir ] ; then
+            echo "Please, provide the path to the input protein(s) fasta file"
+	  read input_fasta
+	  echo "Please, provide directory where you want to save the Protein Assessment results"
+	  read Assessment_output_dir
+	  mkdir -p "$Assessment_output_dir/Proteins_Assessment_Results"
+        elif [ ! -z $RV_Results_dir ] ; then
+            input_fasta="$RV_Results_dir/Non_Allergens.fasta"
+            Assessment_output_dir="$output_data"
+            mkdir -p "$Assessment_output_dir/Proteins_Assessment_Results"
+fi
+mkdir -p "$Assessment_output_dir/Proteins_Assessment_Results/Essentiality_Results"
+mkdir -p "$Assessment_output_dir/Proteins_Assessment_Results/Functional_Annotation"
+mkdir -p "$Assessment_output_dir/Proteins_Assessment_Results/Toxicity_Results"
+
+if [ -e "$input_fasta" ]; then
+    blastp -query "$input_fasta" -db $AntiPan_dir/DB/DEG/DEG -outfmt 10 -out "$Assessment_output_dir/Proteins_Assessment_Results/Essentiality_Results/Essential_proteins_hits.out" -evalue 1.0E-5
+    blastp -query "$input_fasta" -db $AntiPan_dir/DB/DEG/DEG -outfmt 7 -out "$Assessment_output_dir/Proteins_Assessment_Results/Essentiality_Results/Essential_proteins_details.out" -evalue 1.0E-5
+    awk -F ',' '$3 >= 35 && $12 >= 100 {print}' "$Assessment_output_dir/Proteins_Assessment_Results/Essentiality_Results/Essential_proteins_hits.out" > "$Assessment_output_dir/Proteins_Assessment_Results/Essentiality_Results/Bit_Identity_Filtered.txt"
+    awk -F',' 'NR==FNR{a[$1]; next} /^>/{if (substr($0,2) in a && !(seen[substr($0,2)]++)) seq=1; else seq=0} seq{print}' "$Assessment_output_dir/Proteins_Assessment_Results/Essentiality_Results/Bit_Identity_Filtered.txt" "$input_file" > "$Assessment_output_dir/Proteins_Assessment_Results/Essentiality_Results/E_Filter.fasta"
+    echo "Essentiality Filter Finished"
+
+    # Functional annotation
+    export EGGNOG_DATA_DIR="/home/cucg/anaconda3/envs/Antipan/lib/python3.11/site-packages/eggnog_mapper/eggnogmapper/data"
+    emapper.py --cpu 20 -i "$input_fasta" -o "$Assessment_output_dir/Proteins_Assessment_Results/Functional_Annotation/Functional_annotation"
+
+    # Toxicity prediction
+    toxinpred2 -i "$input_fasta" -o "$Assessment_output_dir/Proteins_Assessment_Results/Toxicity_Results/Toxicity_Prediction.csv" -m 2 -d 2
+    awk -F ',' '$6 == "Toxin" {print $1}' "$Assessment_output_dir/Proteins_Assessment_Results/Toxicity_Results/Toxicity_Prediction.csv" > "$Assessment_output_dir/Proteins_Assessment_Results/Toxicity_Results/Toxin_IDs.txt"
+    awk -F ',' '$6 == "Non-Toxin" {print $1}' "$Assessment_output_dir/Proteins_Assessment_Results/Toxicity_Results/Toxicity_Prediction.csv" > "$Assessment_output_dir/Proteins_Assessment_Results/Toxicity_Results/Non_Toxin_IDs.txt"
+    awk 'NR==FNR {a[$1]; next} /^>/{id=substr($0,2); if (id in a) seq=1; else seq=0} seq' "$Assessment_output_dir/Proteins_Assessment_Results/Toxicity_Results/Toxin_IDs.txt" "$input_fasta" > "$Assessment_output_dir/Proteins_Assessment_Results/Toxicity_Results/Toxins.fasta"
+    awk 'NR==FNR {a[$1]; next} /^>/{id=substr($0,2); if (id in a) seq=1; else seq=0} seq' "$Assessment_output_dir/Proteins_Assessment_Results/Toxicity_Results/Non_Toxin_IDs.txt" "$input_fasta" > "$Assessment_output_dir/Proteins_Assessment_Results/Toxicity_Results/Non_Toxins.fasta"
+    echo "Toxin sequences generated: Toxins.fasta"
+    echo "Non-toxin sequences generated: Non_Toxins.fasta"
+fi
+export Toxicity_dir="$Assessment_output_dir/Toxicity_Results"
+echo "------Proteins Assessment Finished------$4"
+}
+
+Immunoinformatics_module() {
+##### T Cell Epitopes Prediction ##### 
+### MHC-I Epitopes ###
+# IEDB Next-Generation Tools T Cell Class I - version 0.1 beta #
+if [ -f "$conda_sh" ] ; then
+            source $path_to_conda
+            conda activate Antipan
+        else
+            echo "Please write the path to the conda.sh file"
+            read path_to_conda 
+            source $path_to_conda
+            conda activate Antipan
+fi
+if [ -z $Toxicity_dir ] ; then
+            echo "Please, provide directory where you want to save the Immuno-informatics Analyses results"
+	  read immunoinformatics_dir
+            echo "Please, provide the path to the input toxic protein(s) fasta file: "
+	  read input_file_toxins
+	  echo "Please, provide the path to the input non-toxic protein(s) fasta file: "
+	  read input_file_non
+	  mkdir -p "$immunoinformatics_dir/Immuno-informatics_Results"
+        elif [ ! -z $Toxicity_dir ] ; then
+            input_file_toxins="$Toxicity_dir/Toxins.fasta"
+            input_file_non="$Toxicity_dir/Non_Toxins.fasta"
+            immunoinformatics_dir="$output_data"
+            mkdir -p "$immunoinformatics_dir/Immuno-informatics_Results"
+fi
+
+sed -i "s|\"input_sequence_text_file_path\": \".*\"|\"input_sequence_text_file_path\": \"$input_file_toxins\"|" ../Input_Files/Binding_ann_1.json
+sed -i "s|\"input_sequence_text_file_path\": \".*\"|\"input_sequence_text_file_path\": \"$input_file_toxins\"|" ../Input_Files/Binding_netmhcpan-el_1.json
+sed -i "s|\"input_sequence_text_file_path\": \".*\"|\"input_sequence_text_file_path\": \"$input_file_toxins\"|" ../Input_Files/Immunogenicity_pMHC_1.json
+sed -i "s|\"input_sequence_text_file_path\": \".*\"|\"input_sequence_text_file_path\": \"$input_file_toxins\"|" ../Input_Files/Processing_netctlpan_1.json
+sed -i "s|\"input_sequence_text_file_path\": \".*\"|\"input_sequence_text_file_path\": \"$input_file_non\"|" ../Input_Files/Binding_ann_2.json
+sed -i "s|\"input_sequence_text_file_path\": \".*\"|\"input_sequence_text_file_path\": \"$input_file_non\"|" ../Input_Files/Binding_netmhcpan-el_2.json
+sed -i "s|\"input_sequence_text_file_path\": \".*\"|\"input_sequence_text_file_path\": \"$input_file_non\"|" ../Input_Files/Immunogenicity_pMHC_2.json
+sed -i "s|\"input_sequence_text_file_path\": \".*\"|\"input_sequence_text_file_path\": \"$input_file_non\"|" ../Input_Files/Processing_netctlpan_2.json
+echo "File path updated successfully."
+## processing input fasta files ##
+tmp=$(mktemp) && \
+awk '
+/^>/ {
+    # Check if header already matches the target format (e.g., ">AA100_rplM-#1")
+    if ($0 ~ /^>[^_]+_[^-#]+-[0-9]+$/) {
+        print;  # Leave as-is
+        next;
+    }
+    # Otherwise, reformat
+    isolate = substr($1, 2);
+    split(isolate, parts, "_");
+    protein = parts[length(parts)];
+    printf ">%s_%s-%d\n", parts[1], protein, ++count;
+    next;
+}
+{ print }' $input_file_toxins > "$tmp" && \
+mv "$tmp" $input_file_toxins
+
+tmp=$(mktemp) && \
+awk '
+/^>/ {
+    # Check if header already matches the target format (e.g., ">AA100_rplM-#1")
+    if ($0 ~ /^>[^_]+_[^-#]+-[0-9]+$/) {
+        print;  # Leave as-is
+        next;
+    }
+    # Otherwise, reformat
+    isolate = substr($1, 2);
+    split(isolate, parts, "_");
+    protein = parts[length(parts)];
+    printf ">%s_%s-%d\n", parts[1], protein, ++count;
+    next;
+}
+{ print }' $input_file_non > "$tmp" && \
+mv "$tmp" $input_file_non
+
+mkdir -p "$immunoinformatics_dir/Immuno-informatics_Results/Results-toxins/Ann_Results"
+mkdir -p "$immunoinformatics_dir/Immuno-informatics_Results/Results-toxins/Immunogenicity_Results"
+mkdir -p "$immunoinformatics_dir/Immuno-informatics_Results/Results-toxins/NetCTLPan_Results"
+mkdir -p "$immunoinformatics_dir/Immuno-informatics_Results/Results-toxins/NetMHCpan-el_Results"
+mkdir -p "$immunoinformatics_dir/Immuno-informatics_Results/Results-toxins/MHC-II_Results/NetMHCIIpan-EL_Results"
+mkdir -p "$immunoinformatics_dir/Immuno-informatics_Results/Results-toxins/B-Cell_Epitopes_Results"
+mkdir -p "$immunoinformatics_dir/Immuno-informatics_Results/Results-non-toxins/Ann_Results"
+mkdir -p "$immunoinformatics_dir/Immuno-informatics_Results/Results-non-toxins/Immunogenicity_Results"
+mkdir -p "$immunoinformatics_dir/Immuno-informatics_Results/Results-non-toxins/NetCTLPan_Results"
+mkdir -p "$immunoinformatics_dir/Immuno-informatics_Results/Results-non-toxins/NetMHCpan-el_Results"
+mkdir -p "$immunoinformatics_dir/Immuno-informatics_Results/Results-non-toxins/MHC-II_Results/NetMHCIIpan-EL_Results"
+mkdir -p "$immunoinformatics_dir/Immuno-informatics_Results/Results-non-toxins/B-Cell_Epitopes_Results"
+
+cd /opt/iedb_tools/ng_tc1-0.1.1-beta
+## Binding Prediction Module ##
+echo "Started Immunoinformatics Analysis"
+# Ann_Predictor #
+python3 src/tcell_mhci.py -j $input_files_dir/Binding_ann_1.json -o $immunoinformatics_dir/Immuno-informatics_Results/Results-toxins/Ann_Results/Binding_ann_results
+echo "Ann Binding Predictor for Toxins Finished"
+# netMHCpan-el_Predictor #
+python3 src/tcell_mhci.py -j $input_files_dir/Binding_netmhcpan-el_1.json -o $immunoinformatics_dir/Immuno-informatics_Results/Results-toxins/NetMHCpan-el_Results/Binding_netMHCpan-el_results
+echo "netMHCpan-el Binding Predictor for Toxins Finished"
+## Processing/Presentation Prediction Module ##
+# NetCTLPan_Predictor #
+python3 src/tcell_mhci.py -j $input_files_dir/Processing_netctlpan_1.json -o $immunoinformatics_dir/Immuno-informatics_Results/Results-toxins/NetCTLPan_Results/Processing_netCTLPan_results
+echo "netCTLPan Processing Predictor for Toxins Finished"
+## Immunogenicity Module ##
+# pMHC_Predictor #
+python3 src/tcell_mhci.py -j $input_files_dir/Immunogenicity_pMHC_1.json -o $immunoinformatics_dir/Immuno-informatics_Results/Results-toxins/Immunogenicity_Results/Immunogenicity_pMHC_results
+echo "pMHC Immunogenicity Predictor for Toxins Finished"
+
+# Ann_Predictor #
+python3 src/tcell_mhci.py -j $input_files_dir/Binding_ann_2.json -o $immunoinformatics_dir/Immuno-informatics_Results/Results-non-toxins/Ann_Results/Binding_ann_results
+echo "Ann Binding Predictor for non-Toxins Finished"
+# netMHCpan-el_Predictor #
+python3 src/tcell_mhci.py -j $input_files_dir/Binding_netmhcpan-el_2.json -o $immunoinformatics_dir/Immuno-informatics_Results/Results-non-toxins/NetMHCpan-el_Results/Binding_netMHCpan-el_results
+echo "netMHCpan-el Binding Predictor for non-Toxins Finished"
+## Processing/Presentation Prediction Module ##
+# NetCTLPan_Predictor #
+python3 src/tcell_mhci.py -j $input_files_dir/Processing_netctlpan_2.json -o $immunoinformatics_dir/Immuno-informatics_Results/Results-non-toxins/NetCTLPan_Results/Processing_netCTLPan_results
+echo "netCTLPan Processing Predictor for non-Toxins Finished"
+## Immunogenicity Module ##
+# pMHC_Predictor #
+python3 src/tcell_mhci.py -j $input_files_dir/Immunogenicity_pMHC_2.json -o $immunoinformatics_dir/Immuno-informatics_Results/Results-non-toxins/Immunogenicity_Results/Immunogenicity_pMHC_results
+echo "pMHC Immunogenicity Predictor for non-Toxins Finished"
+### MHC-II Epitopes ###
+## MHC class II peptide binding prediction tools - version 3.1.12 ##
+cd ../mhc_ii
+# netmhciipan_el Predictor #
+python3 mhc_II_binding.py netmhciipan_el HLA-DRB1*01:01,HLA-DRB1*03:01,HLA-DRB1*04:01,HLA-DRB1*04:05,HLA-DRB1*07:01,HLA-DRB1*08:02,HLA-DRB1*09:01,HLA-DRB1*11:01,HLA-DRB1*12:01,HLA-DRB1*13:02,HLA-DRB1*15:01,HLA-DRB3*01:01,HLA-DRB3*02:02,HLA-DRB4*01:01,HLA-DRB5*01:01,HLA-DQA1*05:01/DQB1*02:01,HLA-DQA1*05:01/DQB1*03:01,HLA-DQA1*03:01/DQB1*03:02,HLA-DQA1*04:01/DQB1*04:02,HLA-DQA1*01:01/DQB1*05:01,HLA-DQA1*01:02/DQB1*06:02,HLA-DPA1*02:01/DPB1*01:01,HLA-DPA1*01:03/DPB1*02:01,HLA-DPA1*01:03/DPB1*04:01,HLA-DPA1*03:01/DPB1*04:02,HLA-DPA1*02:01/DPB1*05:01,HLA-DPA1*02:01/DPB1*14:01 $input_file_toxins 13-20 > $immunoinformatics_dir/Immuno-informatics_Results/Results-toxins/MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_results.tsv
+echo "netmhciipan_el MHC-II Predictor for Toxins Finished"
+
+python3 mhc_II_binding.py netmhciipan_el HLA-DRB1*01:01,HLA-DRB1*03:01,HLA-DRB1*04:01,HLA-DRB1*04:05,HLA-DRB1*07:01,HLA-DRB1*08:02,HLA-DRB1*09:01,HLA-DRB1*11:01,HLA-DRB1*12:01,HLA-DRB1*13:02,HLA-DRB1*15:01,HLA-DRB3*01:01,HLA-DRB3*02:02,HLA-DRB4*01:01,HLA-DRB5*01:01,HLA-DQA1*05:01/DQB1*02:01,HLA-DQA1*05:01/DQB1*03:01,HLA-DQA1*03:01/DQB1*03:02,HLA-DQA1*04:01/DQB1*04:02,HLA-DQA1*01:01/DQB1*05:01,HLA-DQA1*01:02/DQB1*06:02,HLA-DPA1*02:01/DPB1*01:01,HLA-DPA1*01:03/DPB1*02:01,HLA-DPA1*01:03/DPB1*04:01,HLA-DPA1*03:01/DPB1*04:02,HLA-DPA1*02:01/DPB1*05:01,HLA-DPA1*02:01/DPB1*14:01 $input_file_non 13-20 > $immunoinformatics_dir/Immuno-informatics_Results/Results-non-toxins/MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_results.tsv
+echo "netmhciipan_el MHC-II Predictor for Non-Toxins Finished"
+cd $source_path
+### B-cell Epitopes Prediction ###
+source ../bepipred3/bin/activate
+python3 ../BepiPred3_src/bepipred3_CLI.py -i $input_file_toxins -o $immunoinformatics_dir/Immuno-informatics_Results/Results-toxins/B-Cell_Epitopes_Results/ -pred vt_pred -add_seq_len
+python3 ../BepiPred3_src/bepipred3_CLI.py -i $input_file_non -o $immunoinformatics_dir/Immuno-informatics_Results/Results-non-toxins/B-Cell_Epitopes_Results/ -pred vt_pred -add_seq_len
+deactivate
+## Processing raw output to generate a summary file for linear epitopes ##
+python3 Generate_B-cell_Summary_Table.py "$immunoinformatics_dir/Immuno-informatics_Results/Results-toxins/B-Cell_Epitopes_Results"
+python3 Generate_B-cell_Summary_Table.py "$immunoinformatics_dir/Immuno-informatics_Results/Results-non-toxins/B-Cell_Epitopes_Results"
+echo ">> B Cell Epitopes Summary files Generated <<"
+echo ">> B Cell Epitopes Prediction Finished <<"
+
+cd $immunoinformatics_dir/Immuno-informatics_Results/Results-toxins
+################################################# Postprocessing #################################################
+echo "#___Postprocessing of Immuno-informatics Analysis Results will Start___#"
+### Step-1: Filteration using 1% "Percentile rank" cutoff ###
+awk -F ' ' '$1 == "allele" {print $0}; $4 <= 1 {print}' Ann_Results/Binding_ann_results.tsv > Ann_Results/Binding_ann_filtered.tsv
+awk -F ' ' '$1 == "allele" {print $0}; $6 <= 1 {print}' NetMHCpan-el_Results/Binding_netMHCpan-el_results.tsv > NetMHCpan-el_Results/Binding_netMHCpan-el_filtered.tsv
+awk -F ' ' '$1 == "sequence_number" {print $0}; $9 <= 1 {print}' NetCTLPan_Results/Processing_netCTLPan_results.tsv > NetCTLPan_Results/Processing_netCTLPan_filtered.tsv
+awk -F ' ' '$3 > 0 {print}' Immunogenicity_Results/Immunogenicity_pMHC_results.tsv > Immunogenicity_Results/Immunogenicity_pMHC_filtered.tsv
+awk -F ' ' '$1 == "allele" {print $0}; $9 <= 1 {print}' MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_results.tsv > MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_filtered.tsv
+### Step-2: Combining Files "No duplicates" ###
+## MHC-Binding Prediction Combining ##
+mkdir -v "MHC-I_Integrated_Results"
+awk 'BEGIN {print "allele peptide ic50 netmhcpan-el_score ann_percentile netmhcpan-el_percentile"} FNR>1 && NR==FNR {peptide[$2]=$3; percentile[$2]=$4; next} FNR>1 {if ($2 in peptide) {printf "%s %s %.2f %.6f %.2f %.2f\n", $1,$2,peptide[$2],$5, percentile[$2], $6}}' Ann_Results/Binding_ann_filtered.tsv NetMHCpan-el_Results/Binding_netMHCpan-el_filtered.tsv > MHC-I_Integrated_Results/Binding_filtered_combined.tsv
+awk 'FNR>1 && NR==FNR {peptide[$2]=$3; percentile[$2]=$4; next} FNR>1 && !(($2 in peptide)) {printf "%s %s %s %.6f %s %.2f\n", $1,$2,"NA",$5,"NA", $6}' Ann_Results/Binding_ann_filtered.tsv NetMHCpan-el_Results/Binding_netMHCpan-el_filtered.tsv >> MHC-I_Integrated_Results/Binding_filtered_combined.tsv
+awk 'FNR>1 && NR==FNR {peptide2[$2]; next} FNR>1 && !(($2 in peptide2)) {printf "%s %s %.2f %s %.2f %s\n", $1,$2,$3,"NA", $4, "NA"}' NetMHCpan-el_Results/Binding_netMHCpan-el_filtered.tsv Ann_Results/Binding_ann_filtered.tsv >> MHC-I_Integrated_Results/Binding_filtered_combined.tsv
+#######################################################################################
+## MHC-Binding-Processing Prediction Combining ##
+awk 'BEGIN {print "allele Sequence-Number peptide ic50 netmhcpan-el_score mhc_prediction tap_prediction_score cleavage_prediction_score combined_prediction_score ann_percentile netmhcpan-el_percentile netCTLPan_percentile"} FNR>1 && NR==FNR {seqnumber[$3]=$1; peptide[$3]=$3; mhcprediction[$3]=$5; tapscore[$3]=$6; cleavagescore[$3]=$7; combinedscore[$3]=$8; percentile[$3]=$9; next} FNR>1 {if ($2 in peptide) {printf "%s %i %s %.2f %.6f %.3f %.3f %.5f %.5f %.2f %.2f %.2f\n", $1,seqnumber[$2],$2,$3,$4,mhcprediction[$2],tapscore[$2],cleavagescore[$2],combinedscore[$2],$5,$6,percentile[$2]}}' NetCTLPan_Results/Processing_netCTLPan_filtered.tsv MHC-I_Integrated_Results/Binding_filtered_combined.tsv > MHC-I_Integrated_Results/Binding_Processing_filtered_combined.tsv
+awk 'FNR>1 && NR==FNR {peptide[$3]=$3; next} FNR>1 && !(($2 in peptide)) {printf "%s %s %s %.2f %.6f %s %s %s %s %.2f %.2f %.2f\n", $1,"NA", $2, $3, $4, "NA", "NA", "NA", "NA", $5, $6, "NA"}' NetCTLPan_Results/Processing_netCTLPan_filtered.tsv MHC-I_Integrated_Results/Binding_filtered_combined.tsv >> MHC-I_Integrated_Results/Binding_Processing_filtered_combined.tsv
+########################################################################################
+## MHC-Binding-Processing-Immunogenicity Prediction Combining
+awk 'BEGIN {print "allele Sequence-Number peptide ic50 netmhcpan-el_score mhc_prediction tap_prediction_score cleavage_prediction_score combined_prediction_score ann_percentile netmhcpan-el_percentile netCTLPan_percentile immunogenicity_score"} FNR>1 && NR==FNR {allele[$3]=$1; peptide[$3]=$3; line[$3]=$0; next} FNR>1 {if ($1 in peptide && allele[$1]==$2) {printf "%s %.5f\n", line[$1], $3}}' MHC-I_Integrated_Results/Binding_Processing_filtered_combined.tsv Immunogenicity_Results/Immunogenicity_pMHC_filtered.tsv > MHC-I_Integrated_Results/MHC-I_Prediction_combined_Intermediate.tsv
+awk 'FNR>1 && NR==FNR {peptide[$1]=$1; allele[$1]=$2; score[$1]=$3; next} FNR>1 {if ($3 in peptide && allele[$3]==$1) {printf "%s %s %s %.2f %.6f %.3f %.3f %.5f %.5f %.2f %.2f %.2f %.5f\n", $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, score[$3]}}' Immunogenicity_Results/Immunogenicity_pMHC_filtered.tsv MHC-I_Integrated_Results/Binding_Processing_filtered_combined.tsv >> MHC-I_Integrated_Results/MHC-I_Prediction_combined_Intermediate.tsv
+awk 'FNR>1 && NR==FNR {peptide[$1]=$1; next} FNR>1 && !(($3 in peptide)) {printf "%s %s %s %.2f %.6f %.3f %.3f %.5f %.5f %.2f %.2f %.2f %.2f\n", $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, "NA"}' Immunogenicity_Results/Immunogenicity_pMHC_filtered.tsv MHC-I_Integrated_Results/Binding_Processing_filtered_combined.tsv >> MHC-I_Integrated_Results/MHC-I_Prediction_combined_Intermediate.tsv
+## Removing Duplicates ##
+awk 'NR==FNR && !(seen[$0]++) {print $0}' MHC-I_Integrated_Results/MHC-I_Prediction_combined_Intermediate.tsv > MHC-I_Integrated_Results/MHC-I_Prediction_Final.tsv
+## Step-3: allele count & MHC-I_combined_Percentile_Score ##
+awk 'BEGIN {print "Sequence_Number peptide allele_count alleles population_coverage"} 
+     FNR>1 && NR==FNR {allele[$3]=$1; hla[$3]=hla[$3] "," allele[$3]; seqnumber[$3]=$2; peptide[$3]++; next} 
+     END {
+         for (a in peptide) {
+             c=(peptide[a]/27)*97;
+             gsub("^,", "", hla[a]);
+             printf "%s %s %i %s %.2f\n", seqnumber[a], a, peptide[a], hla[a], c;
+         }
+     }' MHC-I_Integrated_Results/MHC-I_Prediction_Final.tsv > MHC-I_Integrated_Results/MHC-I_Peptides_allele-count.tsv
+#### MHC-II Postprocessing ####     
+## step-4: MHC-II Representative Peptide Computation ## 
+#### netmhciipan-el ####
+awk 'BEGIN {print "core_peptide representative_peptide"}
+     FNR>1 && NR==FNR {peptide[$6]=$7; reppeptide[$6]=reppeptide[$6] "," peptide[$6]; next} 
+     END {
+         for (a in peptide) {
+             gsub("^,", "", reppeptide[a]);
+             n = split(reppeptide[a], array, ",");
+             rep_peptides="";
+             for (i=1; i <= n; i++) {
+                 rep = array[i];
+                 if (index(rep_peptides, rep) == 0) {
+                     rep_peptides = rep_peptides "," rep;
+                 }
+                 for (j=2; j <= n; j++) {
+                     if (match(array[j], rep)) {
+                         rep = array[j];
+                     }
+                 }
+             }
+             gsub("^,", "", rep_peptides);
+             p = split(rep_peptides, reppeptide_array, ",")
+             for (k in reppeptide_array) {
+                 printf "%s %s\n", a, reppeptide_array[k];    
+             }    
+          }
+     }' MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_results.tsv > MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_reppeptides.tsv
+## filteing using 20% rank --> to get the promiscuous binders "binding to >= 50% of alleles" ##
+awk 'BEGIN {print "allele seq_num start end length core_peptide rep_peptide netmhciipan-el_score percentile rank"}
+     FNR>1 && NR==FNR {reppeptide[$2]=$2; next} FNR>1 && ($7 in reppeptide) && $9 <= 20 {printf "%s\n", $0}' MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_reppeptides.tsv MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_results.tsv > MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_results-filtered.tsv
+## Step-5: MHC-II allele count ##
+## core_peptide allele count ## 
+awk 'BEGIN {print "Sequence_Number core_peptide allele_count alleles population_coverage"} 
+     FNR>1 && NR==FNR {allele[$6]=$1; hla[$6]=hla[$6] "," allele[$6]; seqnumber[$6]=$2; core_peptide[$6]++; next} 
+     END {
+         for (a in core_peptide) {
+             gsub("^,", "", hla[a]);
+             n = split(hla[a], array, ",")
+             
+             delete seen
+             delete unique_array
+             for (k = 1; k <= n; k++) {
+                 if (!(array[k] in seen)) {
+                     unique_array[++j] = array[k]
+                     seen[array[k]] = 1
+                 }
+             }
+             
+             c = (length(unique_array) / 27) * 99;
+             g = length(unique_array);
+             alleles = "";
+             for (e in unique_array) {
+                 alleles = alleles (alleles == "" ? "" : ", ") unique_array[e];
+             }
+             printf "%i %s %i %s %.2f\n", seqnumber[a], a, g, alleles, c;
+         }
+     }' MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_results-filtered.tsv > MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_Core-Peptides_allele-count.tsv
+## peptide allele count ##
+awk 'BEGIN {print "Sequence_Number core_peptide peptide allele_count alleles population_coverage"} 
+     FNR>1 && NR==FNR {allele[$7]=$1; hla[$7]=hla[$7] "," allele[$7]; seqnumber[$7]=$2; peptide[$7]++; core_peptide[$7]=$6; next} 
+     END {
+         for (a in peptide) {
+             gsub("^,", "", hla[a]);
+             n = split(hla[a], array, ",")
+             
+             delete seen
+             delete unique_array
+             for (k = 1; k <= n; k++) {
+                 if (!(array[k] in seen)) {
+                     unique_array[++j] = array[k]
+                     seen[array[k]] = 1
+                 }
+             }
+             
+             c = (length(unique_array) / 27) * 99;
+             g = length(unique_array);
+             alleles = "";
+             for (e in unique_array) {
+                 alleles = alleles (alleles == "" ? "" : ", ") unique_array[e];
+             }
+             c=(length(unique_array)/27)*99;
+             printf "%i %s %s %i %s %.2f\n", seqnumber[a], core_peptide[a], a, g, alleles, c;
+         }
+     }' MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_results-filtered.tsv > MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_Peptides_allele-count.tsv
+### Computing promiscuous binder peptides "binding to >= 50% of alleles" ###
+awk 'BEGIN {print "allele seq_num start end length core_peptide rep_peptide netmhciipan-el_score percentile rank"} FNR>1 && NR==FNR {peptide[$3]=$3; allele_count[$3]=$4; next} FNR>1 && ($7 in peptide) && (allele_count[$7] >= 14) {printf "%s\n", $0}' MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_Peptides_allele-count.tsv MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_results-filtered.tsv > MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_Promiscuous_peptides.tsv
+### Step-6: Overlapping MHC-I and MHC-II "using the promiscuous binders" ###       
+awk 'BEGIN {print "Sequence_Number MHC-II_Core_Peptide MHC-I_Peptide Core_Peptide_Percentile Peptide_Percentiles"} 
+     FNR==NR {seq_num[FNR]=$2; core_peptide[FNR]=$6; percentile[FNR]=$9; next} 
+     {
+         for (i=1; i<=length(core_peptide); i++) {
+             if (index($3, core_peptide[i]) > 0) {
+                 printf "%i %s %s %.2f %.2f %.2f %.2f %.5f\n", seq_num[i], core_peptide[i], $3, percentile[i], $10, $11, $12, $13
+             }
+         }
+     }' MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_Promiscuous_peptides.tsv MHC-I_Integrated_Results/MHC-I_Prediction_Final.tsv > T-Cell_Overlapped_Epitopes_Intermediate.tsv
+awk 'NR==FNR && !(seen[$2, $3]++) {print $0}' T-Cell_Overlapped_Epitopes_Intermediate.tsv > T-Cell_Overlapped_Epitopes.tsv
+### Step-7: Overlapping T-Cell Epitopes with B-Cell Epitopes ###
+awk 'BEGIN {print "Sequence_Number B-Cell_Epitope MHC-II_Core_Peptide MHC-I_Peptide B-Cell_Epitope_Score Core_Peptide_Percentile Peptide_Percentiles"} 
+     FNR==NR {seq_num[FNR]=$1; core_peptide[FNR]=$2; peptide[FNR]=$3; corepercentile[FNR]=$4; percentile1[FNR]=$5; percentile2[FNR]=$6; percentile3[FNR]=$7; percentile4[FNR]=$8; next} 
+     FNR==1 {FS=","}
+     {
+         for (i=1; i<=length(core_peptide); i++) {
+             if (index($3, core_peptide[i]) > 0) {
+                 printf "%i %s %s %s %.5f %.2f %.2f %.2f %.2f %.5f\n", seq_num[i], $3, core_peptide[i], peptide[i], $5, corepercentile[i], percentile1[i], percentile2[i], percentile3[i], percentile4[i]
+             }
+         }
+     }' T-Cell_Overlapped_Epitopes.tsv B-Cell_Epitopes_Results/summary_output_top50_linear.csv > B-Cell_T-Cell_Overlapped_Epitopes.tsv
+# generating the shortlisted potential candidate antigens FASTA file
+awk '
+# Process First File
+NR == FNR {
+    if ($0 ~ /^>/) {
+        current_id = $0
+        # Extract all numbers from the protein ID
+        split(current_id, parts, /[^0-9]+/)
+        for (i in parts) {
+            if (parts[i] != "") {
+                num = parts[i]
+                # Store the protein ID with all its numbers
+                protein_numbers[num] = current_id
+            }
+        }
+    } else {
+        proteins[current_id] = $0
+    }
+    next
+}
+
+# Process Second File
+{
+    # Get the sequence number from first column
+    seq_num = $1
+    
+    # Skip header line if present
+    if (FNR == 1 && $0 ~ /Sequence_Number/) next
+    
+    # Find all protein IDs that contain this number
+    if (seq_num in protein_numbers) {
+        matching_id = protein_numbers[seq_num]
+        found_proteins[matching_id] = 1
+    }
+}
+
+END {
+    # Output the unique proteins
+    output_file = "Toxic_Potetnial_Antigen_Candidates.fasta"
+    for (id in found_proteins) {
+        print id > output_file
+        print proteins[id] > output_file
+    }
+    print "Generated file: " output_file
+}
+' $input_file_toxins B-Cell_T-Cell_Overlapped_Epitopes.tsv
+echo "Toxic Antigen Candidates File Generated"
+##################################################################################################     
+
+cd $immunoinformatics_dir/Immuno-informatics_Results/Results-non-toxins
+####### Postprocessing #######
+### Step-1: Filteration using 1% "Percentile rank" cutoff ###
+awk -F ' ' '$1 == "allele" {print $0}; $4 <= 1 {print}' Ann_Results/Binding_ann_results.tsv > Ann_Results/Binding_ann_filtered.tsv
+awk -F ' ' '$1 == "allele" {print $0}; $6 <= 1 {print}' NetMHCpan-el_Results/Binding_netMHCpan-el_results.tsv > NetMHCpan-el_Results/Binding_netMHCpan-el_filtered.tsv
+awk -F ' ' '$1 == "sequence_number" {print $0}; $9 <= 1 {print}' NetCTLPan_Results/Processing_netCTLPan_results.tsv > NetCTLPan_Results/Processing_netCTLPan_filtered.tsv
+awk -F ' ' '$3 > 0 {print}' Immunogenicity_Results/Immunogenicity_pMHC_results.tsv > Immunogenicity_Results/Immunogenicity_pMHC_filtered.tsv
+awk -F ' ' '$1 == "allele" {print $0}; $9 <= 1 {print}' MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_results.tsv > MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_filtered.tsv
+### Step-2: Combining Files "No duplicates" ###
+## MHC-Binding Prediction Combining ##
+mkdir -v "MHC-I_Integrated_Results"
+awk 'BEGIN {print "allele peptide ic50 netmhcpan-el_score ann_percentile netmhcpan-el_percentile"} FNR>1 && NR==FNR {peptide[$2]=$3; percentile[$2]=$4; next} FNR>1 {if ($2 in peptide) {printf "%s %s %.2f %.6f %.2f %.2f\n", $1,$2,peptide[$2],$5, percentile[$2], $6}}' Ann_Results/Binding_ann_filtered.tsv NetMHCpan-el_Results/Binding_netMHCpan-el_filtered.tsv > MHC-I_Integrated_Results/Binding_filtered_combined.tsv
+awk 'FNR>1 && NR==FNR {peptide[$2]=$3; percentile[$2]=$4; next} FNR>1 && !(($2 in peptide)) {printf "%s %s %s %.6f %s %.2f\n", $1,$2,"NA",$5,"NA", $6}' Ann_Results/Binding_ann_filtered.tsv NetMHCpan-el_Results/Binding_netMHCpan-el_filtered.tsv >> MHC-I_Integrated_Results/Binding_filtered_combined.tsv
+awk 'FNR>1 && NR==FNR {peptide2[$2]; next} FNR>1 && !(($2 in peptide2)) {printf "%s %s %.2f %s %.2f %s\n", $1,$2,$3,"NA", $4, "NA"}' NetMHCpan-el_Results/Binding_netMHCpan-el_filtered.tsv Ann_Results/Binding_ann_filtered.tsv >> MHC-I_Integrated_Results/Binding_filtered_combined.tsv
+#######################################################################################
+## MHC-Binding-Processing Prediction Combining ##
+awk 'BEGIN {print "allele Sequence-Number peptide ic50 netmhcpan-el_score mhc_prediction tap_prediction_score cleavage_prediction_score combined_prediction_score ann_percentile netmhcpan-el_percentile netCTLPan_percentile"} FNR>1 && NR==FNR {seqnumber[$3]=$1; peptide[$3]=$3; mhcprediction[$3]=$5; tapscore[$3]=$6; cleavagescore[$3]=$7; combinedscore[$3]=$8; percentile[$3]=$9; next} FNR>1 {if ($2 in peptide) {printf "%s %i %s %.2f %.6f %.3f %.3f %.5f %.5f %.2f %.2f %.2f\n", $1,seqnumber[$2],$2,$3,$4,mhcprediction[$2],tapscore[$2],cleavagescore[$2],combinedscore[$2],$5,$6,percentile[$2]}}' NetCTLPan_Results/Processing_netCTLPan_filtered.tsv MHC-I_Integrated_Results/Binding_filtered_combined.tsv > MHC-I_Integrated_Results/Binding_Processing_filtered_combined.tsv
+awk 'FNR>1 && NR==FNR {peptide[$3]=$3; next} FNR>1 && !(($2 in peptide)) {printf "%s %s %s %.2f %.6f %s %s %s %s %.2f %.2f %.2f\n", $1,"NA", $2, $3, $4, "NA", "NA", "NA", "NA", $5, $6, "NA"}' NetCTLPan_Results/Processing_netCTLPan_filtered.tsv MHC-I_Integrated_Results/Binding_filtered_combined.tsv >> MHC-I_Integrated_Results/Binding_Processing_filtered_combined.tsv
+########################################################################################
+## MHC-Binding-Processing-Immunogenicity Prediction Combining
+awk 'BEGIN {print "allele Sequence-Number peptide ic50 netmhcpan-el_score mhc_prediction tap_prediction_score cleavage_prediction_score combined_prediction_score ann_percentile netmhcpan-el_percentile netCTLPan_percentile immunogenicity_score"} FNR>1 && NR==FNR {allele[$3]=$1; peptide[$3]=$3; line[$3]=$0; next} FNR>1 {if ($1 in peptide && allele[$1]==$2) {printf "%s %.5f\n", line[$1], $3}}' MHC-I_Integrated_Results/Binding_Processing_filtered_combined.tsv Immunogenicity_Results/Immunogenicity_pMHC_filtered.tsv > MHC-I_Integrated_Results/MHC-I_Prediction_combined_Intermediate.tsv
+awk 'FNR>1 && NR==FNR {peptide[$1]=$1; allele[$1]=$2; score[$1]=$3; next} FNR>1 {if ($3 in peptide && allele[$3]==$1) {printf "%s %s %s %.2f %.6f %.3f %.3f %.5f %.5f %.2f %.2f %.2f %.5f\n", $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, score[$3]}}' Immunogenicity_Results/Immunogenicity_pMHC_filtered.tsv MHC-I_Integrated_Results/Binding_Processing_filtered_combined.tsv >> MHC-I_Integrated_Results/MHC-I_Prediction_combined_Intermediate.tsv
+awk 'FNR>1 && NR==FNR {peptide[$1]=$1; next} FNR>1 && !(($3 in peptide)) {printf "%s %s %s %.2f %.6f %.3f %.3f %.5f %.5f %.2f %.2f %.2f %.2f\n", $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, "NA"}' Immunogenicity_Results/Immunogenicity_pMHC_filtered.tsv MHC-I_Integrated_Results/Binding_Processing_filtered_combined.tsv >> MHC-I_Integrated_Results/MHC-I_Prediction_combined_Intermediate.tsv
+## Removing Duplicates ##
+awk 'NR==FNR && !(seen[$0]++) {print $0}' MHC-I_Integrated_Results/MHC-I_Prediction_combined_Intermediate.tsv > MHC-I_Integrated_Results/MHC-I_Prediction_Final.tsv
+## Step-3: allele count & MHC-I_combined_Percentile_Score ##
+awk 'BEGIN {print "Sequence_Number peptide allele_count alleles population_coverage"} 
+     FNR>1 && NR==FNR {allele[$3]=$1; hla[$3]=hla[$3] "," allele[$3]; seqnumber[$3]=$2; peptide[$3]++; next} 
+     END {
+         for (a in peptide) {
+             c=(peptide[a]/27)*97;
+             gsub("^,", "", hla[a]);
+             printf "%s %s %i %s %.2f\n", seqnumber[a], a, peptide[a], hla[a], c;
+         }
+     }' MHC-I_Integrated_Results/MHC-I_Prediction_Final.tsv > MHC-I_Integrated_Results/MHC-I_Peptides_allele-count.tsv
+#### MHC-II Postprocessing ####     
+## step-4: MHC-II Representative Peptide Computation ## 
+#### netmhciipan-el ####
+awk 'BEGIN {print "core_peptide representative_peptide"}
+     FNR>1 && NR==FNR {peptide[$6]=$7; reppeptide[$6]=reppeptide[$6] "," peptide[$6]; next} 
+     END {
+         for (a in peptide) {
+             gsub("^,", "", reppeptide[a]);
+             n = split(reppeptide[a], array, ",");
+             rep_peptides="";
+             for (i=1; i <= n; i++) {
+                 rep = array[i];
+                 if (index(rep_peptides, rep) == 0) {
+                     rep_peptides = rep_peptides "," rep;
+                 }
+                 for (j=2; j <= n; j++) {
+                     if (match(array[j], rep)) {
+                         rep = array[j];
+                     }
+                 }
+             }
+             gsub("^,", "", rep_peptides);
+             p = split(rep_peptides, reppeptide_array, ",")
+             for (k in reppeptide_array) {
+                 printf "%s %s\n", a, reppeptide_array[k];    
+             }    
+          }
+     }' MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_results.tsv > MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_reppeptides.tsv
+## filteing using 20% rank --> to get the promiscuous binders "binding to >= 50% of alleles" ##
+awk 'BEGIN {print "allele seq_num start end length core_peptide rep_peptide netmhciipan-el_score percentile rank"}
+     FNR>1 && NR==FNR {reppeptide[$2]=$2; next} FNR>1 && ($7 in reppeptide) && $9 <= 20 {printf "%s\n", $0}' MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_reppeptides.tsv MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_results.tsv > MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_results-filtered.tsv
+## Step-5: MHC-II allele count ##
+## core_peptide allele count ## 
+awk 'BEGIN {print "Sequence_Number core_peptide allele_count alleles population_coverage"} 
+     FNR>1 && NR==FNR {allele[$6]=$1; hla[$6]=hla[$6] "," allele[$6]; seqnumber[$6]=$2; core_peptide[$6]++; next} 
+     END {
+         for (a in core_peptide) {
+             gsub("^,", "", hla[a]);
+             n = split(hla[a], array, ",")
+             
+             delete seen
+             delete unique_array
+             for (k = 1; k <= n; k++) {
+                 if (!(array[k] in seen)) {
+                     unique_array[++j] = array[k]
+                     seen[array[k]] = 1
+                 }
+             }
+             
+             c = (length(unique_array) / 27) * 99;
+             g = length(unique_array);
+             alleles = "";
+             for (e in unique_array) {
+                 alleles = alleles (alleles == "" ? "" : ", ") unique_array[e];
+             }
+             printf "%i %s %i %s %.2f\n", seqnumber[a], a, g, alleles, c;
+         }
+     }' MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_results-filtered.tsv > MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_Core-Peptides_allele-count.tsv
+## peptide allele count ##
+awk 'BEGIN {print "Sequence_Number core_peptide peptide allele_count alleles population_coverage"} 
+     FNR>1 && NR==FNR {allele[$7]=$1; hla[$7]=hla[$7] "," allele[$7]; seqnumber[$7]=$2; peptide[$7]++; core_peptide[$7]=$6; next} 
+     END {
+         for (a in peptide) {
+             gsub("^,", "", hla[a]);
+             n = split(hla[a], array, ",")
+             
+             delete seen
+             delete unique_array
+             for (k = 1; k <= n; k++) {
+                 if (!(array[k] in seen)) {
+                     unique_array[++j] = array[k]
+                     seen[array[k]] = 1
+                 }
+             }
+             
+             c = (length(unique_array) / 27) * 99;
+             g = length(unique_array);
+             alleles = "";
+             for (e in unique_array) {
+                 alleles = alleles (alleles == "" ? "" : ", ") unique_array[e];
+             }
+             c=(length(unique_array)/27)*99;
+             printf "%i %s %s %i %s %.2f\n", seqnumber[a], core_peptide[a], a, g, alleles, c;
+         }
+     }' MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_results-filtered.tsv > MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_Peptides_allele-count.tsv
+### Computing promiscuous binder peptides "binding to >= 50% of alleles" ###
+awk 'BEGIN {print "allele seq_num start end length core_peptide rep_peptide netmhciipan-el_score percentile rank"} FNR>1 && NR==FNR {peptide[$3]=$3; allele_count[$3]=$4; next} FNR>1 && ($7 in peptide) && (allele_count[$7] >= 14) {printf "%s\n", $0}' MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_Peptides_allele-count.tsv MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_results-filtered.tsv > MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_Promiscuous_peptides.tsv
+### Step-6: Overlapping MHC-I and MHC-II "using the promiscuous binders" ###       
+awk 'BEGIN {print "Sequence_Number MHC-II_Core_Peptide MHC-I_Peptide Core_Peptide_Percentile Peptide_Percentiles"} 
+     FNR==NR {seq_num[FNR]=$2; core_peptide[FNR]=$6; percentile[FNR]=$9; next} 
+     {
+         for (i=1; i<=length(core_peptide); i++) {
+             if (index($3, core_peptide[i]) > 0) {
+                 printf "%i %s %s %.2f %.2f %.2f %.2f %.5f\n", seq_num[i], core_peptide[i], $3, percentile[i], $10, $11, $12, $13
+             }
+         }
+     }' MHC-II_Results/NetMHCIIpan-EL_Results/netmhcIIpan-el_Promiscuous_peptides.tsv MHC-I_Integrated_Results/MHC-I_Prediction_Final.tsv > T-Cell_Overlapped_Epitopes_Intermediate.tsv
+awk 'NR==FNR && !(seen[$2, $3]++) {print $0}' T-Cell_Overlapped_Epitopes_Intermediate.tsv > T-Cell_Overlapped_Epitopes.tsv
+### Step-7: Overlapping T-Cell Epitopes with B-Cell Epitopes ###
+awk 'BEGIN {print "Sequence_Number B-Cell_Epitope MHC-II_Core_Peptide MHC-I_Peptide B-Cell_Epitope_Score Core_Peptide_Percentile Peptide_Percentiles"} 
+     FNR==NR {seq_num[FNR]=$1; core_peptide[FNR]=$2; peptide[FNR]=$3; corepercentile[FNR]=$4; percentile1[FNR]=$5; percentile2[FNR]=$6; percentile3[FNR]=$7; percentile4[FNR]=$8; next} 
+     FNR==1 {FS=","}
+     {
+         for (i=1; i<=length(core_peptide); i++) {
+             if (index($3, core_peptide[i]) > 0) {
+                 printf "%i %s %s %s %.5f %.2f %.2f %.2f %.2f %.5f\n", seq_num[i], $3, core_peptide[i], peptide[i], $5, corepercentile[i], percentile1[i], percentile2[i], percentile3[i], percentile4[i]
+             }
+         }
+     }' T-Cell_Overlapped_Epitopes.tsv B-Cell_Epitopes_Results/summary_output_top50_linear.csv > B-Cell_T-Cell_Overlapped_Epitopes.tsv    
+# generating the shortlisted potential candidate antigens FASTA file
+awk '
+# Process First File
+NR == FNR {
+    if ($0 ~ /^>/) {
+        current_id = $0
+        # Extract all numbers from the protein ID
+        split(current_id, parts, /[^0-9]+/)
+        for (i in parts) {
+            if (parts[i] != "") {
+                num = parts[i]
+                # Store the protein ID with all its numbers
+                protein_numbers[num] = current_id
+            }
+        }
+    } else {
+        proteins[current_id] = $0
+    }
+    next
+}
+
+# Process Second File
+{
+    # Get the sequence number from first column
+    seq_num = $1
+    
+    # Skip header line if present
+    if (FNR == 1 && $0 ~ /Sequence_Number/) next
+    
+    # Find all protein IDs that contain this number
+    if (seq_num in protein_numbers) {
+        matching_id = protein_numbers[seq_num]
+        found_proteins[matching_id] = 1
+    }
+}
+
+END {
+    # Output the unique proteins
+    output_file = "Non-toxic_Potetnial_Antigen_Candidates.fasta"
+    for (id in found_proteins) {
+        print id > output_file
+        print proteins[id] > output_file
+    }
+    print "Generated file: " output_file
+}
+' $input_file_non B-Cell_T-Cell_Overlapped_Epitopes.tsv
+echo "Non-toxic Antigen Candidates File Generated"
+echo "//___Postprocessing of Immuno-informatics Analysis Results Finished___//$5"
+}
+"$@"
+if [ $# -eq 0 ]; then
+    Annotation_module
+    Pangenome_module
+    Reverse_Vaccinology_module
+    Protein_Assessment
+    Immunoinformatics_module
+fi

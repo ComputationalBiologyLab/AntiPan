@@ -1,0 +1,136 @@
+#!/usr/bin/perl
+# Perl script wrapper to run a "docker run" command which runs 
+# PSORTb inside the docker container.
+
+use strict;
+use Getopt::Long;
+use File::Basename;
+use Cwd 'abs_path';
+
+our $docker_results_dir = "/tmp/results";
+our $docker_image = "brinkmanlab/psortb_commandline:1.0.2";
+
+sub main {
+
+    my ($seqfile, $help, $nondocker_results_dir);
+    my ($positive, $negative, $archaea, $xskiploc);
+    my ($format, $verbose, $cutoff, $exact, $version, $output, $divergent);
+
+    my @args = @ARGV;
+    my $extra_args = remove_unneeded_args(\@args);
+
+
+    GetOptions('seq|i=s'     => \$seqfile,  'positive|p'    => \$positive,
+               'archaea|a'   => \$archaea,  'negative|n'    => \$negative,
+               'x-skip-localization' => \$xskiploc,
+               'help|h'      => \$help,     'outdir|r=s'    => \$nondocker_results_dir,
+               'format|f=s'  => \$format,   'divergent|d=f' => \$divergent,
+               'verbose|v'   => \$verbose, 
+               'cutoff|c=f'  => \$cutoff,   'output|o=s'    => \$output,
+               'exact|e'     => \$exact,    'version'       => \$version);
+
+    usage() if($help);
+
+    if ($version) {
+        my $cmd = " sudo docker run --rm  $docker_image /usr/local/psortb/bin/psort --version";
+        #print "cmd = $cmd\n";
+        system($cmd);
+        exit(0);
+    }
+
+    if (! -d $nondocker_results_dir) {
+        print "Please enter a valid local directory to store the PSORTb results in (-r).\n";
+        usage();
+    }
+    elsif (! -e $seqfile) {
+        print "Please enter a valid FASTA-format protein sequence file (-i).\n";
+    }
+
+    $seqfile = abs_path($seqfile);
+    $nondocker_results_dir  = abs_path($nondocker_results_dir); 
+    $nondocker_results_dir =~ s/\/$//; # remove trailing slash if present
+
+    my $seqfilename = basename($seqfile);
+    my $nondocker_seqfile = "$nondocker_results_dir/$seqfilename";
+    my $docker_seqfile    = "$docker_results_dir/$seqfilename";
+
+    # copy file to mount directory (if it doesn't already exist)
+    my $seqfile_copied = make_file_copy($seqfile, $nondocker_seqfile);
+    
+
+    my $cmd = " sudo docker run --rm -v $nondocker_results_dir:$docker_results_dir -e MOUNT='$nondocker_results_dir'  $docker_image /usr/local/psortb/bin/psort $extra_args -i $docker_seqfile";
+    #print "cmd = $cmd\n";
+    system($cmd);
+
+    # remove copied files (if they were created)
+    delete_file($nondocker_seqfile, $seqfile_copied);
+}
+
+sub make_file_copy {
+    my ($orig_file, $new_file) = @_;
+
+    my $cmd = "cp $orig_file $new_file";
+    system($cmd);
+    die "Could not copy file: $cmd: $@\n" if $@;
+}
+
+sub delete_file {
+    my ($file, $delete_flag) = @_;
+
+    if ($delete_flag) {
+        my $cmd = "rm $file";
+        system($cmd);
+        die "Could not delete file: $cmd: $@\n" if $@;
+    }
+}
+
+sub remove_unneeded_args {
+    my $args = shift;
+
+    # remove -r (non-docker results dir) because inside docker, the 
+    # "Saving results to <-r option value>" is provided by an environment
+    # variable.
+    # Remove -i <local file> (because we need to use -i <container file>)
+    my @modified_arg_list;
+
+    for (my $i=0; $i<scalar(@$args); $i++) {
+
+        if (($$args[$i] eq '-r') ||
+            ($$args[$i] eq '--outdir') ||
+            ($$args[$i] eq '-i') || 
+            ($$args[$i] eq '--seq')) {
+            $i++;
+        }
+        else {
+            push(@modified_arg_list, $$args[$i]);
+        }
+    }
+    return( join(" ", @modified_arg_list) );
+}
+
+sub usage {
+    $0 =~ /^.*\/(.+)/;
+    print("\nUsage: $1 -i <sequence file> -r <local results directory> [-n|-p|-a] [OPTIONS]\n");
+    print("Example command: psortb -n -i myseqs.fasta -r /tmp/psortb_results\n");
+    print("  --seq, -i         Input sequence file path (required)\n");
+    print("  --positive, -p    Gram positive bacteria\n");
+    print("  --negative, -n    Gram negative bacteria\n");
+    print("  --archaea, -a     Archaea\n");
+    print("  --outdir, -r      Path of where to save results files.\n");
+    print("  --cutoff, -c      Sets a cutoff value for reported results\n");
+    print("  --divergent, -d   Sets a cutoff value for the multiple\n");
+    print("                    localization flag\n");
+    print("  --format, -f      Specifies sequence format (default is FASTA)\n");
+    print("  --exact, -e       Skip SCLBLASTe (useful for batch runs of data\n");
+    print("                    against itself in SCLBLAST)\n");
+    print("  --output, -o      Specifies the format for the output (default is\n");
+    print("                    'normal'). Value can be one of: normal, terse or long\n");
+    print("  --verbose, -v     Be verbose while running\n");
+    print("  --version         Print the version of PSortb\n");
+    print("  --x-skip-localization  Comma-separated list of localizations to skip\n");
+    print("  --help, -h        Displays usage information\n\n");
+
+    exit(0);
+}
+
+main();

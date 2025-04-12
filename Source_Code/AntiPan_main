@@ -1,0 +1,128 @@
+#!/bin/bash
+echo "Hello, this is AntiPan - beta version"
+echo -e "
+     _      _   _    _    _  ____     _      _   _           
+    / \    | \ | | _/ |_ | ||  _ \   / \    | \ | |
+   / _ \   |  \| ||_   _|| || |_) | / _ \   |  \| |
+  / ___ \  | |\  |  | |  | ||  __/ / ___ \  | |\  |
+ / /   \ \ | | \ |  | |  | || |   / /   \ \ | | \ |
+/_/     \_\|_|  \|  |_|  |_||_|  /_/     \_\|_|  \|
+"                    
+                    
+PS3="Please, select one of the above choices to run AntiPan modules: "
+options=("The Entire AntiPan Workflow" "Genome Annotation Module" "Pangenome Estimation Module" "Reverse Vaccinology Filteration Module" "Protein Assessment Module" "Immuno-informatics Module" "Quit")
+select ch in "${options[@]}"; do
+	case $ch in "The Entire AntiPan Workflow")
+		echo "Do you want to run AntiPan for Gram-posititve or Gram-negative bacteria ? (P/N)"
+                    read answer
+                    if [ "$answer" = "P" ] || [ "$answer" = "p" ]; then
+                        echo "_____The Entire AntiPan Workflow Will Run_____
+		"
+                        bash AntiPan_Source_Code_p
+                        echo "======= The AntiPan Workflow Finished ======="
+                        break
+                    elif [ "$answer" = "N" ] || [ "$answer" = "n" ]; then
+                        echo "_____The Entire AntiPan Workflow Will Run_____
+		"
+                        bash AntiPan_Source_Code_n
+                        echo "======= The AntiPan Workflow Finished ======="
+                        break
+                    else
+                        echo "Invalid input. Please enter Y or N."
+                    fi
+		break
+		;;
+	"Genome Annotation Module")
+		echo "_____The Genome Annotation Module Will Run_____
+		"
+		bash AntiPan_Source_Code_p Annotation_module
+		echo "=====The Genome Annotation Module Finished=====
+		"
+		echo "1) The Entire AntiPan Workflow
+2) Genome Annotation Module
+3) Pangenome Estimation Module
+4) Reverse Vaccinology Filteration Module
+5) Protein Assessment Module
+6) Immuno-informatics Module
+7) Quit
+"		;;
+	"Pangenome Estimation Module")
+		echo "_____The Pangenome Estimation Module Will Run_____
+		"
+		bash AntiPan_Source_Code_p Pangenome_module
+		echo "=====The Pangenome Estimation Module Finished=====
+		"
+		echo "1) The Entire AntiPan Workflow
+2) Genome Annotation Module
+3) Pangenome Estimation Module
+4) Reverse Vaccinology Filteration Module
+5) Protein Assessment Module
+6) Immuno-informatics Module
+7) Quit
+"
+		;;
+	"Reverse Vaccinology Filteration Module")
+		echo "Do you want to run Reverse Vaccinology Filteration for Gram-posititve or Gram-negative bacteria ? (P/N)"
+                    read answer
+                    if [ "$answer" = "P" ] || [ "$answer" = "p" ]; then
+                        echo "_____The Reverse Vaccinology Filteration Module Will Run_____
+		"
+                        bash AntiPan_Source_Code_p Reverse_Vaccinology_module
+                        echo "The Reverse Vaccinology Filteration Module Finished"
+                        break
+                    elif [ "$answer" = "N" ] || [ "$answer" = "n" ]; then
+                        echo "_____The Reverse Vaccinology Filteration Module Will Run_____
+		"
+                        bash AntiPan_Source_Code_n Reverse_Vaccinology_module
+                        cho "The Reverse Vaccinology Filteration Module Finished"
+                        break
+                    else
+                        echo "Invalid input. Please enter Y or N."
+                    fi
+
+		echo "1) The Entire AntiPan Workflow
+2) Genome Annotation Module
+3) Pangenome Estimation Module
+4) Reverse Vaccinology Filteration Module
+5) Protein Assessment Module
+6) Immuno-informatics Module
+7) Quit
+"
+		;;
+	"Protein Assessment Module")
+		echo "_____The Protein Assessment Module Will Run_____
+		"
+		bash AntiPan_Source_Code_p Protein_Assessment_module
+		echo "=====The Protein Assessment Module Finished=====
+		"
+		echo "1) The Entire AntiPan Workflow
+2) Genome Annotation Module
+3) Pangenome Estimation Module
+4) Reverse Vaccinology Filteration Module
+5) Protein Assessment Module
+6) Immuno-informatics Module
+7) Quit
+"
+		;;
+	"Immuno-informatics Module")
+		echo "_____The Immuno-informatics Module Will Run_____
+		"
+		bash AntiPan_Source_Code_p Immunoinformatics_module
+		echo "=====The Immuno-informatics Module Finished=====
+		"
+		echo "1) The Entire AntiPan Workflow
+2) Genome Annotation Module
+3) Pangenome Estimation Module
+4) Reverse Vaccinology Filteration Module
+5) Protein Assessment Module
+6) Immuno-informatics Module
+7) Quit
+"
+		;;
+	"Quit")
+		echo "____________\ Thank You For Using AntiPan:) /____________"
+		exit
+		;;
+	*) echo "Invalid Option $REPLY";;
+esac
+done
