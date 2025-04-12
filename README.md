@@ -1,4 +1,4 @@
-# AntiPan-The-in-silico-vaccine-identification-Pipeline
+# AntiPan: The _in-silico_ vaccine identification Pipeline
 The AntiPan (beta-version-1) is an in-silico subunit vaccine discovery workflow which augments a variety of bioinformatics and immuno-informatics tools and databases to identify protein antigens for bacterial pathogens vaccine design purpose.
 
 This is the AntiPan's command-line interface (AntiPan-CLI beta-version-1) which provides the user with five utilities including:
