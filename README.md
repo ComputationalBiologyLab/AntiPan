@@ -108,7 +108,8 @@ It might require administrative access, so provide the machine's admin password 
           1. Typing in the terminal: sudo su
           2. Entering the machine's admin password and pressing Enter
           3. Running the AntiPan workflow as usual by typing: "bash AntiPan_main"
-The Reverse Vaccinology Filteration results would be saved in your specified directory inside "Antipan_Results/RV_Results".               
+The Reverse Vaccinology Filteration results would be saved in your specified directory inside "Antipan_Results/RV_Results". 
+Test data is provided under test_data directory in the AntiPan repository. The directory includes input files sample for each one of the 5 AntiPan modules.
 
 ### Cite ###
 If you found AntiPan-0.1-b useful in your research, please cite,
