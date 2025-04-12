@@ -30,15 +30,6 @@ Please, refer to the INSTALLATION file to check the pre-requisites and follow th
 Antipan commandline interface can be initiated by opening the shell terminal in the AntiPan/Source_Code directory and running --> bash AntiPan_main
 You will get a list of options to select from:
 
-          Hello, this is AntiPan - beta version
-
-     _      _   _    _    _  ____     _      _   _           
-    / \    | \ | | _/ |_ | ||  _ \   / \    | \ | |
-   / _ \   |  \| ||_   _|| || |_) | / _ \   |  \| |
-  / ___ \  | |\  |  | |  | ||  __/ / ___ \  | |\  |
- / /   \ \ | | \ |  | |  | || |   / /   \ \ | | \ |
-/_/     \_\|_|  \|  |_|  |_||_|  /_/     \_\|_|  \|
-
           1) The Entire AntiPan Workflow
           2) Genome Annotation Module
           3) Pangenome Estimation Module
