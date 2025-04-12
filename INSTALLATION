@@ -1,0 +1,45 @@
+1. Pre-requisites:
+
+          System requirements: 
+          
+                    - minimum of 16-core processor (24-core is preferable)
+                    - minimum of 16.0 GIB memory (64 GIB memory is preferable)
+                    - minimum disk space of 100 GB (for the needed databases)
+                    - Ubuntu 22.04.5 LTS or above pre-installed on the machine (previous Ubuntu versions might work but with spectial configurations and packages versions)
+                    
+          The user should have Conda, python3, perl v5.34, CPAN, and ncbi-blast-2.12.0+ (blastp) pre-installed.
+
+2. Download Site:
+
+          The user needs to download the AntiPan repository, which includes the source code and all the required databases, to be able to run AntiPan workflow.
+
+          <...UTL...>
+
+3. Unzip/Untar the compressed AntiPan repository
+
+4. Create Antipan conda environment:
+          
+          conda create --name Antipan
+
+5. Install the required packages inside the requirements.txt under the "Antipan" env
+
+6. Configuring T-cell epitopes prediction tools:
+ 
+          Create a directory called "iedb_tools" inside the "/opt" folder and untar both "ng_tc1-0.1.1-beta" and "mhc_ii" inside the "/opt/iedb_tools". Then follow the installation procedures provided by each tools.
+
+7. Configuring BepiPred-3.0:
+           
+          1. untar the "bepipred-3.0b.src.zip" inside the AntiPan directory
+          2. Skip the "Create python virtual environment" as the "bepipred3" environment is created inside the AntiPan directory. You need to run "source ./bepipred3/bin/activate" before the next step.
+          3. pip3 install -r requirements.txt found inside the BepiPred3_src folder
+          
+8. Configuring eggNOG mapper: 
+          
+          Download the diamond database for the eggnogg mapper and create a diamond database for Bacteria:
+          
+          1. download_eggnog_data.py data (create the "data/" dir in case not found inside "eggnog_mapper/eggnogmapper")
+          2. create_dbs.py -m diamond --dbname bacteria --taxa Bacteria
+          
+          3. Then, modify the AntiPan_Source_Code_p and the AntiPan_Source_Code_n scripts by changing the EGGNOG_DATA_DIR path <located at line 301> to your user specific path (~/anaconda3/envs/Antipan/lib/python3.11/site-packages/eggnog_mapper/eggnogmapper/data)
+
+9. Inside Source_Code directory run: bash AntiPan_main

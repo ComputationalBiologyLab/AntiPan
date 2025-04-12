@@ -1,0 +1,14 @@
+package/tool        version   source
+prokka    1.14.6    https://github.com/tseemann/prokka
+roary     3.12.0    https://github.com/sanger-pathogens/Roary/blob/master/README.md#installation
+NCBI-BLAST     2.12.0+        - 
+IEDB_NG_TC1         0.1.1-beta          https://nextgen-tools.iedb.org/download-all
+IEDB_MHC_II         3.1.12    https://www.google.com/url?sa=t&source=web&rct=j&opi=89978449&url=http://tools.iedb.org/mhcii/download/&ved=2ahUKEwiswLj8mNGMAxXVcaQEHTK_GY4QjBB6BAgwEAE&usg=AOvVaw3LsPODcC7zcHAos3TwPC3I
+BepiPred  3.0       https://services.healthtech.dtu.dk/services/BepiPred-3.0/
+toxinpred2          2         https://github.com/raghavagps/toxinpred2
+toxinpred3          3         https://github.com/raghavagps/toxinpred3
+eggnog    2.1.12    https://github.com/eggnogdb/eggnog-mapper/wiki/eggNOG-mapper-v2.1.5-to-v2.1.12#user-content-Installation
+pybiolib  1.2.602   bioconda
+perl      5.34.0    -
+pandas    1.5.3     anaconda
+numpy     1.23.5    cctbx202211
