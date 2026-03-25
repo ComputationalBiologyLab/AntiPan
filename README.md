@@ -1,3 +1,4 @@
+![GitHub stars](https://img.shields.io/github/stars/ComputationalBiologyLab/AntiPan?color=gold) [![License](https://img.shields.io/badge/license-MIT%20-neongreen)](LICENSE) [![DOI](https://img.shields.io/badge/DOI-10.1038%2Fs41598--025--33445--1-blue)](https://doi.org/10.1038/s41598-025-33445-1)
 # AntiPan: The in silico vaccine identification Pipeline
 The AntiPan (beta-version-1) is an in silico subunit vaccine discovery workflow which augments a variety of bioinformatics and immuno-informatics tools and databases to identify protein antigens for bacterial pathogens vaccine design purpose.
 
