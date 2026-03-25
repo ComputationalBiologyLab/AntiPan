@@ -112,5 +112,7 @@ The Reverse Vaccinology Filteration results would be saved in your specified dir
 
 Test data is provided under test_data directory in the AntiPan repository. The directory includes input files sample for each one of the 5 AntiPan modules.
 
-### Cite ###
-If you found AntiPan-0.1-b useful in your research, please cite,
+### Citation ###
+If you found AntiPan-0.1-b useful in your research, please cite AntiPan in your work.
+
+Ibrahim, M.S., Fahmy, J.A., Helal, M.A. et al. AntiPan: a genome-informed in silico pipeline for advancing subunit vaccine discovery against Staphylococcus aureus. Sci Rep 16, 5396 (2026). https://doi.org/10.1038/s41598-025-33445-1
