@@ -52,9 +52,9 @@ MAMIKMSPEEIRAKSQSYGQGSDQIRQILSDLTRAQGEIAAN
 
 The required arguments are:
 
-p for gram-positive bacterial pathogens
+"p" for gram-positive bacterial pathogens
 
-n for gram-negative bacterial pathogens
+"n" for gram-negative bacterial pathogens
 
 ## Outputs ##
 
