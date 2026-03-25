@@ -9,7 +9,7 @@ echo "Please, specify the path to the directory of the input bacterial genomes"
 read input_data
 echo "Please, specify the directory where you want to save the annotation results"
 read output_data
-cp "GB_DB/Staphylococcus aureus MRSA-118.gb" $input_data
+cp "../GB_DB/Staphylococcus aureus MRSA-118.gb" $input_data
 mkdir -p "$output_data/Antipan_Results/Annotation_Results"
 echo "Please write the path to the conda.sh file"
 read path_to_conda
