@@ -1,5 +1,5 @@
-# AntiPan: The _in-silico_ vaccine identification Pipeline
-The AntiPan (beta-version-1) is an in-silico subunit vaccine discovery workflow which augments a variety of bioinformatics and immuno-informatics tools and databases to identify protein antigens for bacterial pathogens vaccine design purpose.
+# AntiPan: The in silico vaccine identification Pipeline
+The AntiPan (beta-version-1) is an in silico subunit vaccine discovery workflow which augments a variety of bioinformatics and immuno-informatics tools and databases to identify protein antigens for bacterial pathogens vaccine design purpose.
 
 This is the AntiPan's command-line interface (AntiPan-CLI beta-version-1) which provides the user with five utilities including:
 
@@ -21,11 +21,11 @@ This is the AntiPan's command-line interface (AntiPan-CLI beta-version-1) which 
 
 This command-line interface provides the utility to run each module separately or run the whole AntiPan workflow to get the final list of potetnial antigen candidates (PACs) at a click.
 
-### Configuration ###
+## Configuration ##
 
 Please, refer to the INSTALLATION file to check the pre-requisites and follow the configuration instructions; and install all the required packages from the "requirements.txt".
 
-### Usage ###
+## Usage ##
 
 Antipan commandline interface can be initiated by opening the shell terminal in the AntiPan/Source_Code directory and running --> bash AntiPan_main
 You will get a list of options to select from:
@@ -47,14 +47,14 @@ The output will vary depending on the module. Nevertheless, the final AntiPan wo
 >AA100_esxA-10
 MAMIKMSPEEIRAKSQSYGQGSDQIRQILSDLTRAQGEIAAN
 
-### Inputs ###
+## Inputs ##
 
 The required arguments are:
 
 p for gram-positive bacterial pathogens
 n for gram-negative bacterial pathogens
 
-### Outputs ###
+## Outputs ##
 
 Running the entire AntiPan workflow will generate a main folder called "Antipan_Results" which includes 6 subfolders:
           
@@ -93,7 +93,7 @@ Running the entire AntiPan workflow will generate a main folder called "Antipan_
                     1. NetMHCIIpan-EL_Results
           6. B-Cell_Epitopes_Results
           
-### Examples ###
+## Examples ##
 
 To run the AntiPan modules (e.g., the Reverse Vaccinology Filteration Module):
           
@@ -112,7 +112,7 @@ The Reverse Vaccinology Filteration results would be saved in your specified dir
 
 Test data is provided under test_data directory in the AntiPan repository. The directory includes input files sample for each one of the 5 AntiPan modules.
 
-### Citation ###
+## Citation ##
 If you found AntiPan-0.1-b useful in your research, please cite AntiPan in your work.
 
 Ibrahim, M.S., Fahmy, J.A., Helal, M.A. et al. AntiPan: a genome-informed in silico pipeline for advancing subunit vaccine discovery against Staphylococcus aureus. Sci Rep 16, 5396 (2026). https://doi.org/10.1038/s41598-025-33445-1
